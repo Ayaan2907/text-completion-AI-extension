@@ -4,7 +4,9 @@
   "version": "1.0",
   "description": "AI-powered text completion for textareas with page context awareness",
   "permissions": [
-    "storage"
+    "storage",
+    "scripting",
+    "activeTab"
   ],
   "host_permissions": [
     "https://openrouter.ai/*"
