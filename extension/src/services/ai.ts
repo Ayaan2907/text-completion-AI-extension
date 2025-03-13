@@ -2,11 +2,11 @@ import type { Settings } from '../types';
 
 export class AIService {
   private settings: Settings;
-  private pageContext: string;
+  private pageContext: string = '';
 
-  constructor(settings: Settings, pageContext: string) {
+  constructor(settings: Settings) {
     this.settings = settings;
-    this.pageContext = pageContext;
+    // this.pageContext = pageContext;
   }
 
   public updateSettings(newSettings: Settings) {
@@ -36,22 +36,20 @@ export class AIService {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.settings.apiKey}`,
-            'HTTP-Referer': 'https://github.com/ayaanqui/text-completion-extension-ai',
-            'X-Title': 'Text Completion Extension'
           },
           body: JSON.stringify({
             model: "deepseek/deepseek-r1:free",
             messages: [
               {
                 role: 'system',
-                content: `You are a text completion AI. Complete text naturally based on context. About the user: ${this.settings.userContext}. Current page context: ${this.pageContext}. ONLY respond with the completion text, no explanations or formatting.`
+                content: `You are a text COMPLETION AI. Complete text naturally based on context. About the user: ${this.settings.userContext}. Current page context: ${this.pageContext}. ONLY respond with the completion text, no explanations or formatting.`
               },
               {
                 role: 'user',
-                content: `Complete this text naturally: "${beforeText} ". Respond ONLY with the completion text.`
+                content: `Complete this text naturally: "${beforeText} ". Respond ONLY with the completion text that may fit next in the text.`
               }
             ],
-            max_tokens: 30,
+            max_tokens: 230,
             temperature: 0.4,
             presence_penalty: 0.1,
             frequency_penalty: 0.1,
