@@ -7,6 +7,8 @@ module.exports = {
   entry: {
     popup: './src/popup.tsx',
     content: './src/content.ts',
+    background: './src/background.ts', // AYAAN : Remember this, this was the missing part, and you were trying to run background.ts and modifying again and again thinking why it is not working. 
+    // READ THE ERRORS CAREFULLY
   },
   output: {
     path: path.resolve(__dirname, '../dist'),
