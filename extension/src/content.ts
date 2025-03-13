@@ -1,229 +1,175 @@
 /// <reference types="chrome"/>
 
 import { defaultSettings, type Settings, type StorageChanges } from './types';
-import { AIService } from './services/ai';
 import { DEBOUNCE_DELAY } from './utils/constants';
-import { createSuggestionElement, createLoaderElement } from './utils/ui';
+import { showLoader, showPrediction, removePrediction, acceptPrediction, ensureLoaderStyles } from './utils/ui';
+
+// Ensure we're in a Chrome extension context
+if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.storage) {
+  console.error('Chrome extension APIs not available');
+  throw new Error('Chrome extension APIs not available');
+}
 
 let settings: Settings = defaultSettings;
-let currentSuggestion: HTMLElement | null = null;
-let currentLoader: HTMLElement | null = null;
 let debounceTimer: number | null = null;
-let aiService: AIService;
+let currentLoader: HTMLElement | null = null;
 
-// Get page context once when script loads
-const pageContext = (() => {
-  const relevantElements = [
-    ...document.getElementsByTagName('h1'),
-    ...document.getElementsByTagName('h2'),
-    document.getElementsByTagName('title')[0],
-    document.querySelector('meta[name="description"]'),
-  ];
+// Initialize loader styles
+ensureLoaderStyles();
 
-  return relevantElements
-    .map(el => el?.textContent || el?.getAttribute('content'))
-    .filter(Boolean)
-    .join(' ');
-})();
+// Initialize settings and notify background with page context
+function getPageMetadata(): string {
+  const metadata = [
+    document.title,
+    document.querySelector('meta[name="description"]')?.getAttribute('content'),
+    ...Array.from(document.querySelectorAll('h1')).map(h => h.textContent),
+  ].filter(Boolean).join(' ').slice(0, 500); // Limit context size
+  return metadata;
+}
 
-// Initialize settings and AI service
+// Initialize settings and notify background
 chrome.storage.sync.get(['settings'], (result) => {
   settings = result.settings || defaultSettings;
-  aiService = new AIService(settings, pageContext);
+  // Send page context with ready message
+  chrome.runtime.sendMessage({ 
+    type: 'PAGE_READY',
+    pageContext: getPageMetadata()
+  });
 });
 
-// Listen for settings changes
+// Update settings when changed
 chrome.storage.onChanged.addListener((changes: StorageChanges) => {
   if (changes.settings) {
     settings = changes.settings.newValue;
-    aiService.updateSettings(settings);
-    if (!settings.enabled) {
-      removeSuggestion();
-      removeLoader();
-    }
   }
 });
 
-function isInputElement(element: HTMLElement): element is HTMLInputElement | HTMLTextAreaElement {
-  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
-}
-
 function isEditableElement(element: HTMLElement): boolean {
-  return element.isContentEditable || 
+  return element instanceof HTMLInputElement || 
+         element instanceof HTMLTextAreaElement ||
+         element.isContentEditable ||
+         element.getAttribute('contenteditable') === 'true' ||
          element.getAttribute('role') === 'textbox' ||
-         element.getAttribute('contenteditable') === 'true';
+         element.classList.contains('notranslate') || // Gmail support
+         element.closest('[contenteditable="true"]') !== null;
 }
 
 function getElementText(element: HTMLElement): string {
-  if (isInputElement(element)) {
-    return element.value;
-  }
-  return element.textContent || '';
-}
-
-function setElementText(element: HTMLElement, text: string, cursorPos: number): void {
-  if (isInputElement(element)) {
-    element.value = text;
-    element.selectionStart = element.selectionEnd = cursorPos;
-  } else {
-    element.textContent = text;
-    // Set cursor position for contenteditable
-    const selection = window.getSelection();
-    const range = document.createRange();
-    const textNode = element.firstChild || element;
-    range.setStart(textNode, cursorPos);
-    range.collapse(true);
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-  }
+  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement 
+    ? element.value 
+    : element.textContent || '';
 }
 
 function getCursorPosition(element: HTMLElement): number {
-  if (isInputElement(element)) {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     return element.selectionStart || 0;
   }
   const selection = window.getSelection();
-  if (!selection || !selection.rangeCount) return 0;
-  
-  const range = selection.getRangeAt(0);
-  return range.startOffset;
-}
-
-function removeSuggestion() {
-  if (currentSuggestion) {
-    if (settings.debug) {
-      console.log('❌ Suggestion dismissed');
-    }
-    currentSuggestion.remove();
-    currentSuggestion = null;
-  }
-}
-
-function removeLoader() {
-  if (currentLoader) {
-    currentLoader.remove();
-    currentLoader = null;
-  }
-}
-
-function positionElement(element: HTMLElement, target: HTMLElement, cursorPos: number) {
-  const rect = target.getBoundingClientRect();
-  const computedStyle = window.getComputedStyle(target);
-  const fontSize = parseInt(computedStyle.fontSize) || 14;
-  const lineHeight = parseInt(computedStyle.lineHeight) || fontSize * 1.2;
-
-  let text = getElementText(target);
-  const textBeforeCursor = text.substring(0, cursorPos);
-  const lines = textBeforeCursor.split('\n');
-  const currentLineNumber = lines.length - 1;
-  const currentLineText = lines[currentLineNumber];
-
-  // Create a temporary span to measure text width
-  const measureSpan = document.createElement('span');
-  measureSpan.style.visibility = 'hidden';
-  measureSpan.style.position = 'absolute';
-  measureSpan.style.fontSize = computedStyle.fontSize;
-  measureSpan.style.fontFamily = computedStyle.fontFamily;
-  measureSpan.style.whiteSpace = 'pre';
-  measureSpan.textContent = currentLineText;
-  document.body.appendChild(measureSpan);
-  const textWidth = measureSpan.getBoundingClientRect().width;
-  measureSpan.remove();
-
-  // Calculate position
-  const scrollTop = isInputElement(target) ? target.scrollTop : target.scrollTop || 0;
-  const scrollLeft = isInputElement(target) ? target.scrollLeft : target.scrollLeft || 0;
-
-  element.style.top = `${rect.top + (currentLineNumber * lineHeight) - scrollTop}px`;
-  element.style.left = `${rect.left + textWidth - scrollLeft}px`;
-  if (element === currentSuggestion) {
-    element.style.maxWidth = `${rect.width - textWidth}px`;
-  }
+  return selection?.anchorOffset || 0;
 }
 
 async function handleInput(event: Event) {
   const target = event.target as HTMLElement;
-  if (!target || (!isInputElement(target) && !isEditableElement(target)) || !settings.enabled) return;
+  if (!target || !isEditableElement(target) || !settings.enabled) return;
 
-  // Clear existing suggestion and timer
-  removeSuggestion();
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
+  removePrediction(target);
+  if (currentLoader) {
+    currentLoader.remove();
+    currentLoader = null;
   }
+  if (debounceTimer) clearTimeout(debounceTimer);
 
-  // Show loader immediately
-  removeLoader();
-  currentLoader = createLoaderElement();
-  positionElement(currentLoader, target, getCursorPosition(target));
-  document.body.appendChild(currentLoader);
-
-  // Debounce the prediction request
+  const cursorPos = getCursorPosition(target);
   debounceTimer = window.setTimeout(async () => {
     const text = getElementText(target);
-    const cursorPos = getCursorPosition(target);
-    if (!text) {
-      removeLoader();
-      return;
+    if (!text) return;
+
+    currentLoader = showLoader(target, cursorPos);
+    try {
+      // Ensure chrome.runtime is available
+      if (!chrome.runtime) {
+        throw new Error('Chrome runtime not available');
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_PREDICTION',
+        text,
+        cursorPos
+      });
+
+      if (response?.prediction) {
+        showPrediction(target, cursorPos, response.prediction);
+      }
+    } catch (error) {
+      console.error('Error getting prediction:', error);
+      if (error instanceof Error && error.message.includes('Extension context invalidated')) {
+        // Extension was reloaded/updated
+        window.location.reload();
+      }
+    } finally {
+      if (currentLoader) {
+        currentLoader.remove();
+        currentLoader = null;
+      }
     }
-
-    const prediction = await aiService.getPrediction(text, cursorPos);
-    removeLoader();
-    
-    if (!prediction) return;
-
-    const suggestion = createSuggestionElement(prediction);
-    positionElement(suggestion, target, cursorPos);
-    document.body.appendChild(suggestion);
-    currentSuggestion = suggestion;
   }, DEBOUNCE_DELAY);
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (!currentSuggestion) return;
-
   const target = event.target as HTMLElement;
-  if (!target || (!isInputElement(target) && !isEditableElement(target))) return;
+  if (!target || !isEditableElement(target)) return;
 
-  if (event.key === 'Tab') {
+  if (event.key === 'Tab' && target.dataset.prediction) {
     event.preventDefault();
-    const suggestion = currentSuggestion.textContent || '';
-    const cursorPos = getCursorPosition(target);
-    const text = getElementText(target);
-    
-    const newText = text.substring(0, cursorPos) + suggestion + text.substring(cursorPos);
-    const newCursorPos = cursorPos + suggestion.length;
-    
-    setElementText(target, newText, newCursorPos);
-    
-    if (settings.debug) {
-      console.log('✅ Suggestion accepted');
-    }
-    removeSuggestion();
-  } else if (event.key === 'Escape') {
-    event.preventDefault();
-    removeSuggestion();
+    event.stopPropagation();
+    acceptPrediction(target);
+  } else if (event.key !== 'Tab') {
+    removePrediction(target);
   }
 }
 
-// Add event listeners for all input types
-document.addEventListener('input', handleInput);
-document.addEventListener('keydown', handleKeydown);
+// Add listeners to document and iframes
+function addListeners(doc: Document) {
+  doc.addEventListener('input', handleInput);
+  doc.addEventListener('keydown', handleKeydown, true);
+}
 
-// Handle dynamically added elements
-const observer = new MutationObserver((mutations) => {
-  for (const mutation of mutations) {
-    for (const node of Array.from(mutation.addedNodes)) {
-      if (node instanceof HTMLElement) {
-        if (isInputElement(node) || isEditableElement(node)) {
-          node.addEventListener('input', handleInput);
-          node.addEventListener('keydown', handleKeydown);
-        }
-      }
-    }
+// Handle iframes
+function setupIframe(iframe: HTMLIFrameElement) {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (doc) addListeners(doc);
+  } catch (e) {
+    console.error('Error setting up iframe:', e);
   }
+}
+
+// Initial setup
+addListeners(document);
+document.querySelectorAll('iframe').forEach(setupIframe);
+
+// Watch for new iframes
+const observer = new MutationObserver(mutations => {
+  mutations.forEach(mutation => {
+    mutation.addedNodes.forEach(node => {
+      if (node instanceof HTMLIFrameElement) {
+        setupIframe(node);
+      }
+    });
+  });
 });
 
 observer.observe(document.body, {
   childList: true,
   subtree: true
-}); 
+});
+
+// Cleanup
+window.addEventListener('unload', () => {
+  observer.disconnect();
+  document.removeEventListener('input', handleInput);
+  document.removeEventListener('keydown', handleKeydown);
+  if (currentLoader) {
+    currentLoader.remove();
+  }
+});
