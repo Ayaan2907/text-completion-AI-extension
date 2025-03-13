@@ -17,7 +17,7 @@ export class AIService {
     this.pageContext = newContext;
   }
 
-  public async getPrediction(text: string, cursorPos: number): Promise<string> {
+  public async getPrediction(text: string, cursorPos: number, inputContext?: string): Promise<string> {
     if (!this.settings.apiKey || !this.settings.enabled) return '';
 
     // Get text around cursor (up to 100 chars each side for faster context)
@@ -27,6 +27,7 @@ export class AIService {
     if (this.settings.debug) {
       console.log('📄 Page Context:', this.pageContext);
       console.log('👤 User Context:', this.settings.userContext);
+      console.log('🏷️ Input Context:', inputContext);
       console.log('✍️ Input:', beforeText + '|' + afterText);
     }
 
@@ -42,7 +43,7 @@ export class AIService {
             messages: [
               {
                 role: 'system',
-                content: `You are a text COMPLETION AI. Complete text naturally based on context. About the user: ${this.settings.userContext}. Current page context: ${this.pageContext}. ONLY respond with the completion text, no explanations or formatting.`
+                content: `You are a text COMPLETION AI. Complete text naturally based on context. About the user: ${this.settings.userContext}. Current page context: ${this.pageContext}.Input field context: ${inputContext || 'None'}. ONLY respond with the completion text, no explanations or formatting.`
               },
               {
                 role: 'user',

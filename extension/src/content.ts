@@ -13,6 +13,8 @@ if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.storage) {
 let settings: Settings = defaultSettings;
 let debounceTimer: number | null = null;
 let currentLoader: HTMLElement | null = null;
+let lastElement: HTMLElement | null = null;
+let lastInputContext: string = '';
 
 // Initialize loader styles
 ensureLoaderStyles();
@@ -22,8 +24,17 @@ function getPageMetadata(): string {
   const metadata = [
     document.title,
     document.querySelector('meta[name="description"]')?.getAttribute('content'),
-    ...Array.from(document.querySelectorAll('h1')).map(h => h.textContent),
-  ].filter(Boolean).join(' ').slice(0, 500); // Limit context size
+    // Current section context (h1 or main heading)
+    document.querySelector('main h1, article h1')?.textContent,
+    // URL path for context
+    new URL(window.location.href).pathname.split('/').filter(Boolean).join(' ')
+  ]
+  .filter(Boolean)
+  .map(text => text?.trim())
+  .filter((text): text is string => typeof text === 'string' && text.length > 0)
+  .join(' | ')
+  .slice(0, 500); 
+
   return metadata;
 }
 
@@ -68,6 +79,34 @@ function getCursorPosition(element: HTMLElement): number {
   return selection?.anchorOffset || 0;
 }
 
+function getInputContext(element: HTMLElement): string {
+  // For input/textarea, check label and placeholder
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    // Check for associated label
+    const id = element.id;
+    const label = id ? document.querySelector(`label[for="${id}"]`)?.textContent : '';
+    if (label) return label;
+    
+    // Check placeholder
+    if (element.placeholder) return element.placeholder;
+    
+    // Check aria-label
+    if (element.getAttribute('aria-label')) return element.getAttribute('aria-label') || '';
+  }
+  
+  // For contenteditable, check parent's label-like elements
+  const parent = element.closest('[role="textbox"]') || element.parentElement;
+  if (parent) {
+    const nearestLabel = parent.querySelector('label')?.textContent ||
+                        parent.getAttribute('aria-label') ||
+                        (parent instanceof HTMLElement ? parent.title : '') ||
+                        '';
+    if (nearestLabel) return nearestLabel;
+  }
+  
+  return '';
+}
+
 async function handleInput(event: Event) {
   const target = event.target as HTMLElement;
   if (!target || !isEditableElement(target) || !settings.enabled) return;
@@ -84,6 +123,12 @@ async function handleInput(event: Event) {
     const text = getElementText(target);
     if (!text) return;
 
+    // Only get input context if element changed
+    if (target !== lastElement) {
+      lastElement = target;
+      lastInputContext = getInputContext(target);
+    }
+
     currentLoader = showLoader(target, cursorPos);
     try {
       // Ensure chrome.runtime is available
@@ -94,7 +139,8 @@ async function handleInput(event: Event) {
       const response = await chrome.runtime.sendMessage({
         type: 'GET_PREDICTION',
         text,
-        cursorPos
+        cursorPos,
+        inputContext: lastInputContext // Send cached context
       });
 
       if (response?.prediction) {

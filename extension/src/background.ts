@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'GET_PREDICTION') {
-    const { text, cursorPos } = request;
+    const { text, cursorPos, inputContext } = request;
     
     if (!settings.apiKey || !settings.enabled) {
       sendResponse({ prediction: '' });
@@ -40,7 +40,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     // Handle API call in background
-    aiService.getPrediction(text, cursorPos)
+    aiService.getPrediction(text, cursorPos, inputContext)
       .then(prediction => {
         sendResponse({ prediction });
       })
