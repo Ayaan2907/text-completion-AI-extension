@@ -3,6 +3,7 @@ import type { Settings } from '../types';
 export class AIService {
   private settings: Settings;
   private pageContext: string = '';
+  private readonly API_URL = 'https://api.anthropic.com/v1/messages';
 
   constructor(settings: Settings) {
     this.settings = settings;
@@ -31,44 +32,66 @@ export class AIService {
       console.log('✍️ Input:', beforeText + '|' + afterText);
     }
 
-      try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.settings.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "deepseek/deepseek-r1:free",
-            messages: [
-              {
-                role: 'system',
-                content: `You are a text COMPLETION AI. Complete text naturally based on context. About the user: ${this.settings.userContext}. Current page context: ${this.pageContext}.Input field context: ${inputContext || 'None'}. ONLY respond with the completion text, no explanations or formatting.`
-              },
-              {
-                role: 'user',
-                content: `Complete this text naturally: "${beforeText} ". Respond ONLY with the completion text that may fit next in the text.`
-              }
-            ],
-            max_tokens: 230,
-            temperature: 0.4,
-            presence_penalty: 0.1,
-            frequency_penalty: 0.1,
-            stop: ["\n"],
-          }),
-        });
+    try {
+      const response = await fetch(this.API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.settings.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-3-sonnet-20240229',
+          max_tokens: 230,
+          messages: [
+            {
+              role: 'user',
+              content: `You are a text completion AI. Based on these contexts:
+              - About the user: ${this.settings.userContext}
+              - Current page: ${this.pageContext}
+              - Input field: ${inputContext || 'None'}
+              
+              The user has typed: "${beforeText}"
+              
+              Continue this text naturally. IMPORTANT:
+              - ONLY provide the continuation text that comes AFTER the user's input
+              - DO NOT repeat any part of the input text
+              - DO NOT add quotes or explanations
+              - Keep the style and context consistent
+              - Take care of word end, spaces, if the word ended start with a space`
+            }
+          ]
+        })
+      });
 
-      // const response = new Response(JSON.stringify({
-      //   choices: [{
-      //     message: {
-      //       content: "mock prediction"
-      //     }
-      //   }]
-      // }), { 
-      //   status: 200,
-      //   statusText: 'OK',
-      //   headers: { 'Content-Type': 'application/json' }
+      //  openrouter
+      // const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //     'Authorization': `Bearer ${this.settings.apiKey}`,
+      //   },
+      //   body: JSON.stringify({
+      //     model: "gpt-4o-mini",
+      //     messages: [
+      //       {
+      //         role: 'system',
+      //         content: `You are a text COMPLETION AI. Complete text naturally based on context. About the user: ${this.settings.userContext}. Current page context: ${this.pageContext}.Input field context: ${inputContext || 'None'}. ONLY respond with the completion text, no explanations or formatting.`
+      //       },
+      //       {
+      //         role: 'user',
+      //         content: `Complete this text naturally: "${beforeText} ". Respond ONLY with the completion text that may fit next in the text.`
+      //       }
+      //     ],
+      //     max_tokens: 230,
+      //     temperature: 0.4,
+      //     presence_penalty: 0.1,
+      //     frequency_penalty: 0.1,
+      //     stop: ["\n"],
+      //   }),
       // });
+      
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -79,7 +102,8 @@ export class AIService {
       }
 
       const data = await response.json();
-      const prediction = data.choices?.[0]?.message?.content?.trim() || '';
+      // const prediction = data.choices?.[0]?.message?.content?.trim() || '';
+      const prediction = data.content?.[0]?.text?.trim() || '';
 
       if (this.settings.debug && prediction) {
         console.log('💡 Completion:', prediction);
