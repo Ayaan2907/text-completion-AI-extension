@@ -111,6 +111,14 @@ async function handleInput(event: Event) {
   const target = event.target as HTMLElement;
   if (!target || !isEditableElement(target) || !settings.enabled) return;
 
+  // Remove prediction if the active input element is changed
+  if (target !== lastElement) {
+    if (lastElement) {
+      removePrediction(lastElement);
+    }
+    lastElement = target;
+  }
+
   removePrediction(target);
   if (currentLoader) {
     currentLoader.remove();
@@ -119,10 +127,15 @@ async function handleInput(event: Event) {
   if (debounceTimer) clearTimeout(debounceTimer);
 
   const cursorPos = getCursorPosition(target);
-  debounceTimer = window.setTimeout(async () => {
-    const text = getElementText(target);
-    if (!text) return;
+  const text = getElementText(target);
+  if (!text) return;
 
+  if (settings.wordMode) {
+    const lastChar = text[cursorPos - 1];
+    if (lastChar !== ' ') return; 
+  }
+
+  debounceTimer = window.setTimeout(async () => {
     // Only get input context if element changed
     if (target !== lastElement) {
       lastElement = target;
