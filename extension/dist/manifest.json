@@ -4,11 +4,16 @@
   "version": "1.0",
   "description": "AI-powered text completion for textareas with page context awareness",
   "permissions": [
-    "storage"
+    "storage",
+    "scripting",
+    "activeTab"
   ],
   "host_permissions": [
     "https://openrouter.ai/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

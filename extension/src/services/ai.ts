@@ -3,8 +3,7 @@ import type { Settings } from '../types';
 export class AIService {
   private settings: Settings;
   private pageContext: string = '';
-  private readonly API_URL = 'https://api.anthropic.com/v1/messages';
-
+  
   constructor(settings: Settings) {
     this.settings = settings;
     // this.pageContext = pageContext;
@@ -33,7 +32,7 @@ export class AIService {
     }
 
     try {
-      const response = await fetch(this.API_URL, {
+      const response = await fetch(this.settings.model.api_url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,7 +41,7 @@ export class AIService {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-3-sonnet-20240229',
+          model: this.settings.model,
           max_tokens: 230,
           messages: [
             {

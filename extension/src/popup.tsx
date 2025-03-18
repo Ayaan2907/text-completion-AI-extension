@@ -7,9 +7,43 @@ import {
   Textarea,
   Switch,
   Title,
-  Space,
+  Paper,
+  Text,
+  Select,
+  Box,
+  createTheme,
+  rem,
+  Divider,
+  Button,
+  Group,
 } from '@mantine/core';
-import { defaultSettings, type Settings } from './types';
+import { MessageSquare, Settings as SettingsIcon, Power } from 'lucide-react';
+import { defaultSettings, type Settings, LLM_MODELS } from './types';
+
+const theme = createTheme({
+  primaryColor: 'violet',
+  defaultRadius: 'sm',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  components: {
+    Paper: {
+      defaultProps: {
+        p: 'md',
+        radius: 'sm',
+        withBorder: false,
+      },
+    },
+    Title: {
+      defaultProps: {
+        fw: 500,
+      },
+    },
+    Text: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+  },
+});
 
 function Popup() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -33,42 +67,124 @@ function Popup() {
   };
 
   return (
-    <MantineProvider>
-      <Stack p="md" style={{ width: 300 }}>
-        <Title order={4}>AI Text Completion</Title>
-        
-        <TextInput
-          label="OpenRouter API Key"
-          placeholder="sk-or-v1-..."
-          value={settings.apiKey}
-          onChange={(e) => updateSettings({ apiKey: e.target.value })}
-          type="password"
-        />
+    <MantineProvider theme={theme}>
+      <Box style={{ width: 260, maxHeight: 400, overflow: 'auto' }}>
+        <Paper>
+          <Stack gap={20}>
+            {/* Enable Extension Section */}
+            <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <Button
+                variant={settings.enabled ? "filled" : "light"}
+                color="violet"
+                size="md"
+                onClick={() => updateSettings({ enabled: !settings.enabled })}
+                leftSection={<Power size={18} />}
+                style={{ width: '100%' }}
+              >
+                {settings.enabled ? 'Enabled' : 'Disabled'}
+              </Button>
+            </Box>
 
-        <Textarea
-          label="About You (AI Context)"
-          placeholder="Describe your writing style and preferences..."
-          value={settings.userContext}
-          onChange={(e) => updateSettings({ userContext: e.target.value })}
-          autosize
-          minRows={2}
-          maxRows={4}
-        />
+            <Divider />
 
-        <Switch
-          label="Enable Extension"
-          checked={settings.enabled}
-          onChange={(e) => updateSettings({ enabled: e.target.checked })}
-        />
+            {/* Custom Prompt Section */}
+            <Box>
+              <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: rem(8), marginBottom: rem(12) }}>
+                <Group justify="space-between" align="center">
+                  <MessageSquare size={16} strokeWidth={1.5} />
+                  <Title order={6}>Custom Prompt</Title>
+                </Group>
+              </Box>
+              <Textarea
+                placeholder="Enter your custom prompt here..."
+                value={settings.userContext}
+                onChange={(e) => updateSettings({ userContext: e.target.value })}
+                minRows={3}
+                maxRows={3}
+                styles={{
+                  root: { width: '100%' },
+                  wrapper: { width: '100%' },
+                  input: {
+                    width: '100%',
+                    border: '1px solid #e9ecef',
+                    borderRadius: rem(4),
+                    padding: rem(8),
+                    fontSize: rem(13),
+                  }
+                }}
+              />
+            </Box>
 
-        <Switch
-          label="Debug Mode"
-          checked={settings.debug}
-          onChange={(e) => updateSettings({ debug: e.target.checked })}
-        />
+            <Divider />
 
-        <Space h="md" />
-      </Stack>
+            {/* Advanced Settings Section */}
+            <Box>
+              <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: rem(8), 
+                marginBottom: rem(16)
+              }}>
+                <Group justify="space-between" align="center">
+                <SettingsIcon size={16} strokeWidth={1.5} />
+                <Title order={6}>Advanced Settings</Title>
+                </Group>
+              </Box>
+              <Stack gap={16}>
+                <Group justify="space-between" align="center">
+                  <Text fw={500}>Debug Mode</Text>
+                  <Switch
+                    size="sm"
+                    checked={settings.debug}
+                    onChange={(e) => updateSettings({ debug: e.target.checked })}
+                    color="violet"
+                  />
+                </Group>
+                
+                <Group justify="space-between" align="center">
+                  <Text fw={500}>Word Mode</Text>
+                  <Switch
+                    size="sm"
+                    checked={settings.wordMode}
+                    onChange={(e) => updateSettings({ wordMode: e.target.checked })}
+                    color="violet"
+                  />
+                </Group>
+
+                <Box>
+                  <Text fw={500} mb={6}>LLM Model</Text>
+                  <Select
+                    size="sm"
+                    data={LLM_MODELS}
+                    value={settings.model}
+                    onChange={(value) => updateSettings({ model: value || 'gpt-4' })}
+                    styles={{
+                      input: {
+                        border: '1px solid #e9ecef',
+                        borderRadius: rem(4),
+                      }
+                    }}
+                  />
+                </Box>
+
+                <Box>
+                  <Text fw={500} mb={6}>API Key</Text>
+                  <TextInput
+                    size="sm"
+                    type="password"
+                    placeholder="••••••••••••"
+                    value={settings.apiKey}
+                    onChange={(e) => updateSettings({ apiKey: e.target.value })}
+                    styles={{
+                      input: {
+                        border: '1px solid #e9ecef',
+                        borderRadius: rem(4),
+                      }
+                    }}
+                  />
+                </Box>
+              </Stack>
+            </Box>
+          </Stack>
+        </Paper>
+      </Box>
     </MantineProvider>
   );
 }
