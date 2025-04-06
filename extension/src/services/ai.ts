@@ -14,7 +14,12 @@ export class AIService {
   }
 
   public updatePageContext(newContext: string) {
+    console.log('📝 Updating AI service page context:', newContext)
     this.pageContext = newContext;
+  }
+
+  public getPageContext(): string {
+    return this.pageContext;
   }
 
   public async getPrediction(text: string, cursorPos: number, inputContext?: string): Promise<string> {
@@ -32,16 +37,32 @@ export class AIService {
     }
 
     try {
+      // TEMP MOCK API RESPONSE - REMOVE FOR PRODUCTION
+      console.log('🤖 MOCK API CALL (TEMP) - Remove for production')
+      await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate network delay
+      const mockResponses = {
+        'gpt-4': 'This is a mock completion from GPT-4. The page context was: ' + this.pageContext,
+        'claude': 'This is a mock completion from Claude. The input context was: ' + inputContext,
+        'default': 'This is a default mock completion. User context: ' + this.settings.userContext
+      }
+      const mockPrediction = mockResponses[this.settings.model.value as keyof typeof mockResponses] || mockResponses.default
+      console.log('💡 MOCK Completion:', mockPrediction)
+      return mockPrediction
+      // END TEMP MOCK - Remove above and uncomment below for production
+
+      /* Original API call - Commented out for testing
       const response = await fetch(this.settings.model.api_url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': this.settings.apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'Authorization': `Bearer ${this.settings.apiKey}`,
+          ...(this.settings.model.value.includes('claude') ? {
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          } : {})
         },
         body: JSON.stringify({
-          model: this.settings.model,
+          model: this.settings.model.value,
           max_tokens: 230,
           messages: [
             {
@@ -101,7 +122,6 @@ export class AIService {
       }
 
       const data = await response.json();
-      // const prediction = data.choices?.[0]?.message?.content?.trim() || '';
       const prediction = data.content?.[0]?.text?.trim() || '';
 
       if (this.settings.debug && prediction) {
@@ -109,6 +129,7 @@ export class AIService {
       }
 
       return prediction;
+      */
     } catch (error) {
       if (this.settings.debug) {
         console.error('❌ API Error:', error);

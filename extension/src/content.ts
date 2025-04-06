@@ -21,6 +21,7 @@ ensureLoaderStyles();
 
 // Initialize settings and notify background with page context
 function getPageMetadata(): string {
+  console.log('🔍 Collecting page metadata...')
   const metadata = [
     document.title,
     document.querySelector('meta[name="description"]')?.getAttribute('content'),
@@ -35,16 +36,19 @@ function getPageMetadata(): string {
   .join(' | ')
   .slice(0, 500); 
 
+  console.log('📄 Page metadata collected:', metadata)
   return metadata;
 }
 
 // Initialize settings and notify background
 chrome.storage.sync.get(['settings'], (result) => {
   settings = result.settings || defaultSettings;
+  const pageContext = getPageMetadata()
+  console.log('🚀 Sending PAGE_READY with context:', pageContext)
   // Send page context with ready message
   chrome.runtime.sendMessage({ 
     type: 'PAGE_READY',
-    pageContext: getPageMetadata()
+    pageContext
   });
 });
 
@@ -117,6 +121,7 @@ async function handleInput(event: Event) {
       removePrediction(lastElement);
     }
     lastElement = target;
+    lastInputContext = getInputContext(target);
   }
 
   removePrediction(target);

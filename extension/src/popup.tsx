@@ -153,8 +153,13 @@ function Popup() {
                   <Select
                     size="sm"
                     data={LLM_MODELS}
-                    value={settings.model}
-                    onChange={(value) => updateSettings({ model: value || 'gpt-4' })}
+                    value={settings.model.value}
+                    onChange={(value) => {
+                      const selectedModel = LLM_MODELS.find(m => m.value === value);
+                      if (selectedModel) {
+                        updateSettings({ model: selectedModel });
+                      }
+                    }}
                     styles={{
                       input: {
                         border: '1px solid #e9ecef',
