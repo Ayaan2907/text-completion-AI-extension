@@ -1,80 +1,116 @@
-import type { Settings } from '../types';
+import type { Settings } from "../types";
 
 export class AIService {
-  private settings: Settings;
-  private pageContext: string = '';
-  
-  constructor(settings: Settings) {
-    this.settings = settings;
-  }
+    private settings: Settings;
+    private pageContext: string = "";
 
-  public updateSettings(newSettings: Settings) {
-    this.settings = newSettings;
-  }
+    constructor(settings: Settings) {
+        this.settings = settings;
+    }
 
-  public updatePageContext(newContext: string) {
-    this.pageContext = newContext;
-  }
+    public updateSettings(newSettings: Settings) {
+        this.settings = newSettings;
+    }
 
-  public getPageContext(): string {
-    return this.pageContext;
-  }
+    public updatePageContext(newContext: string) {
+        this.pageContext = newContext;
+    }
 
-  public async getPrediction(text: string, cursorPos: number, inputContext?: string): Promise<string> {
-    if (!this.settings.apiKey || !this.settings.enabled) return '';
+    public getPageContext(): string {
+        return this.pageContext;
+    }
 
-    // Get text around cursor (up to 100 chars each side for faster context)
-    const beforeText = text.substring(Math.max(0, cursorPos - 100), cursorPos);
-    const afterText = text.substring(cursorPos, Math.min(text.length, cursorPos + 100));
+    public async getPrediction(
+        text: string,
+        cursorPos: number,
+        inputContext?: string,
+        tabCount?: number
+    ): Promise<string> {
+        if (!this.settings.apiKey || !this.settings.enabled) return "";
 
-    try {
-      const prompt = `You are a text completion AI, focused on providing *only* the continuation of a user's text.  Your goal is to complete the sentence or phrase, maintaining the original context and style.
+        // Get text around cursor (up to 100 chars each side for faster context)
+        const beforeText = text.substring(
+            Math.max(0, cursorPos - 100),
+            cursorPos
+        );
+        const afterText = text.substring(
+            cursorPos,
+            Math.min(text.length, cursorPos + 100)
+        );
 
-Here's the context:
-*   **User Information:** ${this.settings.userContext}
-*   **Current Page Context:** ${this.pageContext}
-*   **Input Field Context:** ${inputContext || 'None'}
+        // Determine answer length based on tab count
+        let answerLength = "single line";
+        if (tabCount) {
+            if (tabCount >= 4) {
+                answerLength = "paragraph";
+            } else if (tabCount >= 2) {
+                answerLength = "multi line";
+            }
+        }
 
-The user has typed: "${beforeText}"
+        try {
+          const prompt = `You are a text completion AI focused exclusively on continuing the user's text naturally. Provide ONLY the continuation text.
 
-**Your Task & Constraints:**
-*   **Output ONLY the continuation text.** Do not include any part of the user's original input ("${beforeText}") in your response.
-*   **No introductory phrases.** Avoid starting your response with phrases like "The continuation is..." or similar.
-*   **Maintain consistency.** Ensure your continuation aligns with the user's context, style, and tone.
-*   **Grammatical correctness.** Provide a grammatically correct completion.
-*   **Respect formatting.**  Pay attention to capitalization, spacing, and word boundaries. If the last word in the input is incomplete, complete that word for the output. If the input ends with a space, start the response with a space.
-`;
+          Context:
+          * User Background: ${this.settings.userContext}
+          * Page Content: ${this.pageContext}
+          * Input Field Type: ${inputContext || "None"}
+          * Desired Length: ${answerLength} words
+          
+          Text Before Cursor: "${beforeText}"
+          [Cursor Position]
+          Text After Cursor: "${afterText}"
+          
+          Requirements:
+          * Return ONLY the predicted continuation - never repeat "Text before cursor" or "Text after cursor"
+          * No introductions or explanations in your response
+          * Match the user's style, tone, and context
+          * Ensure grammatical correctness
+          * Maintain proper formatting (capitalization, spacing)
+          * Complete partial words first, then begin with a space for complete words or a new word after spaces
+          * Keep completion concise and relevant
+          `;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.settings.apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }]
-        })
-      });
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.settings.apiKey}`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        contents: [
+                            {
+                                parts: [
+                                    {
+                                        text: prompt,
+                                    },
+                                ],
+                            },
+                        ],
+                    }),
+                }
+            );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Gemini API Error:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorData
-        });
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-      }
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error("Gemini API Error:", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    errorData,
+                });
+                throw new Error(
+                    `API request failed: ${response.status} ${response.statusText}`
+                );
+            }
 
-      const data = await response.json();
-      const prediction = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+            const data = await response.json();
+            const prediction =
+                data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
-      return prediction;
+            return prediction;
 
-      /* Previous API implementations - Commented out
+            /* Previous API implementations - Commented out
       // OpenAI/Claude implementation
       const response = await fetch(this.settings.model.api_url, {
         method: 'POST',
@@ -125,9 +161,9 @@ The user has typed: "${beforeText}"
         }),
       });
       */
-    } catch (error) {
-      console.error('AI Service Error:', error);
-      return '';
+        } catch (error) {
+            console.error("AI Service Error:", error);
+            return "";
+        }
     }
-  }
-} 
+}

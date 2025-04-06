@@ -31,14 +31,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'GET_PREDICTION') {
-    const { text, cursorPos, inputContext } = request;
+    const { text, cursorPos, inputContext, tabCount } = request;
     
     if (!settings.apiKey || !settings.enabled) {
       sendResponse({ prediction: '' });
       return true;
     }
 
-    aiService.getPrediction(text, cursorPos, inputContext)
+    aiService.getPrediction(text, cursorPos, inputContext, tabCount)
       .then(prediction => {
         sendResponse({ prediction });
       })

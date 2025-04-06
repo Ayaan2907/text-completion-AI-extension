@@ -1,7 +1,7 @@
 /// <reference types="chrome"/>
 
 import { defaultSettings, type Settings, type StorageChanges } from './types';
-import { DEBOUNCE_DELAY } from './utils/constants';
+import { DEBOUNCE_DELAY, TAB_COUNT_RESET_TIME } from './utils/constants';
 import { showLoader, showPrediction, removePrediction, acceptPrediction, ensureLoaderStyles } from './utils/ui';
 
 // Ensure we're in a Chrome extension context
@@ -15,6 +15,25 @@ let debounceTimer: number | null = null;
 let currentLoader: HTMLElement | null = null;
 let lastElement: HTMLElement | null = null;
 let lastInputContext: string = '';
+// Track tab press count per element
+const tabPressCounts = new WeakMap<HTMLElement, number>();
+
+
+function resetTabCount(element: HTMLElement) {
+  tabPressCounts.delete(element);
+}
+
+function getTabCount(element: HTMLElement): number {
+  return tabPressCounts.get(element) || 0;
+}
+
+function incrementTabCount(element: HTMLElement) {
+  const currentCount = getTabCount(element);
+  tabPressCounts.set(element, currentCount + 1);
+  
+  // Reset count after 10 minutes
+  setTimeout(() => resetTabCount(element), TAB_COUNT_RESET_TIME);
+}
 
 // Initialize loader styles
 ensureLoaderStyles();
@@ -158,7 +177,8 @@ async function handleInput(event: Event) {
         type: 'GET_PREDICTION',
         text,
         cursorPos,
-        inputContext: lastInputContext // Send cached context
+        inputContext: lastInputContext, // Send cached context
+        tabCount: getTabCount(target) // Send current tab count
       });
 
       if (response?.prediction) {
@@ -183,11 +203,15 @@ function handleKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement;
   if (!target || !isEditableElement(target)) return;
 
+  // Accept prediction on Tab
   if (event.key === 'Tab' && target.dataset.prediction) {
     event.preventDefault();
     event.stopPropagation();
     acceptPrediction(target);
-  } else if (event.key !== 'Tab') {
+    incrementTabCount(target);
+  }
+  // Only remove prediction on specific keys that would modify the text
+  else if (['Backspace', 'Delete', 'Enter', 'Space'].includes(event.key)) {
     removePrediction(target);
   }
 }
