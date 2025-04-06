@@ -26,7 +26,6 @@ chrome.storage.onChanged.addListener((changes) => {
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'PAGE_READY') {
-    // Update AI service with page context
     aiService.updatePageContext(request.pageContext || '');
     return;
   }
@@ -39,16 +38,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
 
-    // Handle API call in background
     aiService.getPrediction(text, cursorPos, inputContext)
       .then(prediction => {
         sendResponse({ prediction });
       })
       .catch(error => {
-        console.error('Error:', error);
+        console.error('AI Service Error:', error);
         sendResponse({ prediction: '' });
       });
 
-    return true; // Keeping the message channel open for async response
+    return true;
   }
 }); 

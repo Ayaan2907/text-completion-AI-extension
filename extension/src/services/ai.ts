@@ -6,7 +6,6 @@ export class AIService {
   
   constructor(settings: Settings) {
     this.settings = settings;
-    // this.pageContext = pageContext;
   }
 
   public updateSettings(newSettings: Settings) {
@@ -14,7 +13,6 @@ export class AIService {
   }
 
   public updatePageContext(newContext: string) {
-    console.log('📝 Updating AI service page context:', newContext)
     this.pageContext = newContext;
   }
 
@@ -29,28 +27,55 @@ export class AIService {
     const beforeText = text.substring(Math.max(0, cursorPos - 100), cursorPos);
     const afterText = text.substring(cursorPos, Math.min(text.length, cursorPos + 100));
 
-    if (this.settings.debug) {
-      console.log('📄 Page Context:', this.pageContext);
-      console.log('👤 User Context:', this.settings.userContext);
-      console.log('🏷️ Input Context:', inputContext);
-      console.log('✍️ Input:', beforeText + '|' + afterText);
-    }
-
     try {
-      // TEMP MOCK API RESPONSE - REMOVE FOR PRODUCTION
-      console.log('🤖 MOCK API CALL (TEMP) - Remove for production')
-      await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate network delay
-      const mockResponses = {
-        'gpt-4': 'This is a mock completion from GPT-4. The page context was: ' + this.pageContext,
-        'claude': 'This is a mock completion from Claude. The input context was: ' + inputContext,
-        'default': 'This is a default mock completion. User context: ' + this.settings.userContext
-      }
-      const mockPrediction = mockResponses[this.settings.model.value as keyof typeof mockResponses] || mockResponses.default
-      console.log('💡 MOCK Completion:', mockPrediction)
-      return mockPrediction
-      // END TEMP MOCK - Remove above and uncomment below for production
+      const prompt = `You are a text completion AI, focused on providing *only* the continuation of a user's text.  Your goal is to complete the sentence or phrase, maintaining the original context and style.
 
-      /* Original API call - Commented out for testing
+Here's the context:
+*   **User Information:** ${this.settings.userContext}
+*   **Current Page Context:** ${this.pageContext}
+*   **Input Field Context:** ${inputContext || 'None'}
+
+The user has typed: "${beforeText}"
+
+**Your Task & Constraints:**
+*   **Output ONLY the continuation text.** Do not include any part of the user's original input ("${beforeText}") in your response.
+*   **No introductory phrases.** Avoid starting your response with phrases like "The continuation is..." or similar.
+*   **Maintain consistency.** Ensure your continuation aligns with the user's context, style, and tone.
+*   **Grammatical correctness.** Provide a grammatically correct completion.
+*   **Respect formatting.**  Pay attention to capitalization, spacing, and word boundaries. If the last word in the input is incomplete, complete that word for the output. If the input ends with a space, start the response with a space.
+`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.settings.apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Gemini API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData
+        });
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const prediction = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+
+      return prediction;
+
+      /* Previous API implementations - Commented out
+      // OpenAI/Claude implementation
       const response = await fetch(this.settings.model.api_url, {
         method: 'POST',
         headers: {
@@ -67,73 +92,41 @@ export class AIService {
           messages: [
             {
               role: 'user',
-              content: `You are a text completion AI. Based on these contexts:
-              - About the user: ${this.settings.userContext}
-              - Current page: ${this.pageContext}
-              - Input field: ${inputContext || 'None'}
-              
-              The user has typed: "${beforeText}"
-              
-              Continue this text naturally. IMPORTANT:
-              - ONLY provide the continuation text that comes AFTER the user's input
-              - DO NOT repeat any part of the input text
-              - DO NOT add quotes or explanations
-              - Keep the style and context consistent
-              - Take care of word end, spaces, if the word ended start with a space`
+              content: prompt
             }
           ]
         })
       });
 
-      //  openrouter
-      // const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //     'Authorization': `Bearer ${this.settings.apiKey}`,
-      //   },
-      //   body: JSON.stringify({
-      //     model: "gpt-4o-mini",
-      //     messages: [
-      //       {
-      //         role: 'system',
-      //         content: `You are a text COMPLETION AI. Complete text naturally based on context. About the user: ${this.settings.userContext}. Current page context: ${this.pageContext}.Input field context: ${inputContext || 'None'}. ONLY respond with the completion text, no explanations or formatting.`
-      //       },
-      //       {
-      //         role: 'user',
-      //         content: `Complete this text naturally: "${beforeText} ". Respond ONLY with the completion text that may fit next in the text.`
-      //       }
-      //     ],
-      //     max_tokens: 230,
-      //     temperature: 0.4,
-      //     presence_penalty: 0.1,
-      //     frequency_penalty: 0.1,
-      //     stop: ["\n"],
-      //   }),
-      // });
-      
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        if (this.settings.debug) {
-          console.error('API Error Response:', errorData);
-        }
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const prediction = data.content?.[0]?.text?.trim() || '';
-
-      if (this.settings.debug && prediction) {
-        console.log('💡 Completion:', prediction);
-      }
-
-      return prediction;
+      // OpenRouter implementation
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.settings.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: 'system',
+              content: prompt
+            },
+            {
+              role: 'user',
+              content: `Complete this text naturally: "${beforeText} ". Respond ONLY with the completion text that may fit next in the text.`
+            }
+          ],
+          max_tokens: 230,
+          temperature: 0.4,
+          presence_penalty: 0.1,
+          frequency_penalty: 0.1,
+          stop: ["\n"],
+        }),
+      });
       */
     } catch (error) {
-      if (this.settings.debug) {
-        console.error('❌ API Error:', error);
-      }
+      console.error('AI Service Error:', error);
       return '';
     }
   }

@@ -60,10 +60,6 @@ function Popup() {
     const updatedSettings = { ...settings, ...newSettings };
     setSettings(updatedSettings);
     chrome.storage.sync.set({ settings: updatedSettings });
-    
-    if (settings.debug) {
-      console.log('Settings updated:', updatedSettings);
-    }
   };
 
   return (
@@ -129,16 +125,6 @@ function Popup() {
               </Box>
               <Stack gap={16}>
                 <Group justify="space-between" align="center">
-                  <Text fw={500}>Debug Mode</Text>
-                  <Switch
-                    size="sm"
-                    checked={settings.debug}
-                    onChange={(e) => updateSettings({ debug: e.target.checked })}
-                    color="violet"
-                  />
-                </Group>
-                
-                <Group justify="space-between" align="center">
                   <Text fw={500}>Word Mode</Text>
                   <Switch
                     size="sm"
@@ -149,32 +135,11 @@ function Popup() {
                 </Group>
 
                 <Box>
-                  <Text fw={500} mb={6}>LLM Model</Text>
-                  <Select
-                    size="sm"
-                    data={LLM_MODELS}
-                    value={settings.model.value}
-                    onChange={(value) => {
-                      const selectedModel = LLM_MODELS.find(m => m.value === value);
-                      if (selectedModel) {
-                        updateSettings({ model: selectedModel });
-                      }
-                    }}
-                    styles={{
-                      input: {
-                        border: '1px solid #e9ecef',
-                        borderRadius: rem(4),
-                      }
-                    }}
-                  />
-                </Box>
-
-                <Box>
-                  <Text fw={500} mb={6}>API Key</Text>
+                  <Text fw={500} mb={6}>Gemini API Key</Text>
                   <TextInput
                     size="sm"
                     type="password"
-                    placeholder="••••••••••••"
+                    placeholder="Enter your Gemini API key"
                     value={settings.apiKey}
                     onChange={(e) => updateSettings({ apiKey: e.target.value })}
                     styles={{

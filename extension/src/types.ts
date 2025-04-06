@@ -9,10 +9,8 @@ export interface LLMModel {
 export interface Settings {
   apiKey: string
   enabled: boolean
-  debug: boolean
   userContext: string
   wordMode: boolean
-  model: LLMModel
 }
 
 export type StorageChange = {
@@ -36,8 +34,6 @@ export const LLM_MODELS: LLMModel[] = [
 export const defaultSettings: Settings = {
   apiKey: '',
   enabled: true,
-  debug: false,
   userContext: 'I am a professional who writes clear and concise text.',
-  wordMode: false,
-  model: LLM_MODELS[0]
+  wordMode: false
 }
