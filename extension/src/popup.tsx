@@ -297,7 +297,7 @@ function Popup() {
                     Test connection
                   </Button>
                   {testState && (
-                    <Text size="xs" mt={6} c={testState.ok ? 'teal' : 'red'}>
+                    <Text size="xs" mt={6} c={testState.ok ? 'teal' : 'red'} data-testid="connection-test-result">
                       {testState.message}
                     </Text>
                   )}

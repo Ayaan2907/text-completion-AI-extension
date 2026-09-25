@@ -118,17 +118,27 @@ export function showLoader(target: HTMLElement, cursorPos: number): HTMLElement 
   return loader;
 }
 
-export function showPrediction(target: HTMLElement, cursorPos: number, prediction: string): void {
-  const text = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement 
-    ? target.value 
+export function showPrediction(
+  target: HTMLElement,
+  cursorPos: number,
+  prediction: string,
+  replaceFrom: number = cursorPos,
+): void {
+  const text = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+    ? target.value
     : target.textContent || '';
 
-  const beforeText = text.substring(0, cursorPos);
+  // The suggestion replaces [replaceFrom, cursorPos) — for continuations
+  // replaceFrom === cursorPos (nothing replaced); a plain-english rewrite
+  // sets replaceFrom to 0 so it swaps out the whole drafted portion.
+  const clampedFrom = Math.min(Math.max(0, replaceFrom), cursorPos);
+  const beforeText = text.substring(0, clampedFrom);
   const afterText = text.substring(cursorPos);
-  
+
   // Store original state
   target.dataset.originalText = text;
   target.dataset.cursorPos = cursorPos.toString();
+  target.dataset.replaceFrom = clampedFrom.toString();
   target.dataset.prediction = prediction;
 
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -136,14 +146,14 @@ export function showPrediction(target: HTMLElement, cursorPos: number, predictio
     const predictedText = beforeText + prediction + afterText;
     target.value = predictedText;
     target.style.color = '#0066cc';
-    target.setSelectionRange(cursorPos, cursorPos + prediction.length);
+    target.setSelectionRange(clampedFrom, clampedFrom + prediction.length);
   } else {
     // For contenteditable elements
     target.textContent = beforeText + prediction + afterText;
     target.style.color = '#0066cc';
     const range = document.createRange();
-    range.setStart(target.firstChild || target, cursorPos);
-    range.setEnd(target.firstChild || target, cursorPos + prediction.length);
+    range.setStart(target.firstChild || target, clampedFrom);
+    range.setEnd(target.firstChild || target, clampedFrom + prediction.length);
     const selection = window.getSelection();
     selection?.removeAllRanges();
     selection?.addRange(range);
@@ -155,16 +165,17 @@ export function removePrediction(target: HTMLElement): void {
   if (!originalText) return;
 
   const cursorPos = parseInt(target.dataset.cursorPos || '0');
+  const restoreCursor = cursorPos;
   
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
     target.value = originalText;
     target.style.color = '';
-    target.setSelectionRange(cursorPos, cursorPos);
+    target.setSelectionRange(restoreCursor, restoreCursor);
   } else {
     target.textContent = originalText;
     target.style.color = '';
     const range = document.createRange();
-    range.setStart(target.firstChild || target, cursorPos);
+    range.setStart(target.firstChild || target, restoreCursor);
     range.collapse(true);
     const selection = window.getSelection();
     selection?.removeAllRanges();
@@ -173,26 +184,33 @@ export function removePrediction(target: HTMLElement): void {
 
   delete target.dataset.originalText;
   delete target.dataset.cursorPos;
+  delete target.dataset.replaceFrom;
   delete target.dataset.prediction;
 }
 
-export function acceptPrediction(target: HTMLElement): void {
+export function acceptPrediction(target: HTMLElement, overridePrediction?: string): void {
   const originalText = target.dataset.originalText;
-  const prediction = target.dataset.prediction;
-  if (!originalText || !prediction) return;
+  const storedPrediction = target.dataset.prediction;
+  if (!originalText || !storedPrediction) return;
 
+  const prediction = overridePrediction ?? storedPrediction;
   const cursorPos = parseInt(target.dataset.cursorPos || '0');
-  const newText = originalText.substring(0, cursorPos) + prediction + originalText.substring(cursorPos);
+  const replaceFrom = parseInt(target.dataset.replaceFrom || cursorPos.toString());
+  const newText =
+    originalText.substring(0, replaceFrom) +
+    prediction +
+    originalText.substring(cursorPos);
+  const finalCursor = replaceFrom + prediction.length;
   
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
     target.value = newText;
     target.style.color = '';
-    target.setSelectionRange(cursorPos + prediction.length, cursorPos + prediction.length);
+    target.setSelectionRange(finalCursor, finalCursor);
   } else {
     target.textContent = newText;
     target.style.color = '';
     const range = document.createRange();
-    range.setStart(target.firstChild || target, cursorPos + prediction.length);
+    range.setStart(target.firstChild || target, finalCursor);
     range.collapse(true);
     const selection = window.getSelection();
     selection?.removeAllRanges();
@@ -201,5 +219,133 @@ export function acceptPrediction(target: HTMLElement): void {
 
   delete target.dataset.originalText;
   delete target.dataset.cursorPos;
+  delete target.dataset.replaceFrom;
   delete target.dataset.prediction;
+}
+// ---- Suggestion popover for longer blocks (Accept / Edit / Regenerate) ----
+
+const POPOVER_ID = 'draft-assist-popover';
+
+export interface SuggestionPopoverCallbacks {
+  /** Inserts the given text at the suggestion's position (user-initiated). */
+  onAccept: (text: string) => void
+  /** Requests a fresh suggestion for the same field and text. */
+  onRegenerate: () => void
+}
+
+const POPOVER_CSS = [
+  'position: absolute',
+  'z-index: 2147483000',
+  'font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  'background: #ffffff',
+  'border: 1px solid #d1d5db',
+  'border-radius: 8px',
+  'box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18)',
+  'padding: 8px',
+  'display: flex',
+  'gap: 6px',
+  'align-items: center',
+].join(';');
+
+const BUTTON_CSS = [
+  'font: 12px/1.2 inherit',
+  'padding: 5px 10px',
+  'border-radius: 6px',
+  'border: 1px solid #d1d5db',
+  'background: #f9fafb',
+  'color: #1f2937',
+  'cursor: pointer',
+].join(';');
+
+function actionButton(action: string, label: string): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.draftAction = action;
+  button.textContent = label;
+  button.style.cssText = BUTTON_CSS;
+  // Keep focus in the form field so Esc/Tab semantics keep working.
+  button.addEventListener('mousedown', (event) => event.preventDefault());
+  return button;
+}
+
+/**
+ * Small popover shown with longer suggestions (full clause, caption block).
+ * The ghost text itself stays in the field; every action is user-initiated —
+ * nothing inserts or submits automatically.
+ */
+export function showSuggestionPopover(
+  target: HTMLElement,
+  callbacks: SuggestionPopoverCallbacks,
+): void {
+  removeSuggestionPopover();
+
+  const popover = document.createElement('div');
+  popover.id = POPOVER_ID;
+  popover.dataset.draftPopover = 'menu';
+  popover.style.cssText = POPOVER_CSS;
+
+  const prediction = target.dataset.prediction ?? '';
+
+  const acceptButton = actionButton('accept', 'Accept');
+  acceptButton.addEventListener('click', () => callbacks.onAccept(prediction));
+
+  const editButton = actionButton('edit', 'Edit');
+  editButton.addEventListener('click', () => showSuggestionEditMode(target, callbacks));
+
+  const regenerateButton = actionButton('regenerate', 'Regenerate');
+  regenerateButton.addEventListener('click', () => callbacks.onRegenerate());
+
+  const hint = document.createElement('span');
+  hint.textContent = 'Tab to accept · Esc to reject';
+  hint.style.cssText = 'color: #6b7280; margin-left: 4px; white-space: nowrap;';
+
+  popover.append(acceptButton, editButton, regenerateButton, hint);
+
+  const rect = target.getBoundingClientRect();
+  popover.style.left = `${rect.left + window.scrollX}px`;
+  popover.style.top = `${rect.bottom + window.scrollY + 6}px`;
+  document.body.appendChild(popover);
+}
+
+/** Edit mode: the suggestion moves into an editable textarea; Apply inserts it. */
+function showSuggestionEditMode(
+  target: HTMLElement,
+  callbacks: SuggestionPopoverCallbacks,
+): void {
+  const prediction = target.dataset.prediction ?? '';
+  const popover = document.getElementById(POPOVER_ID);
+  if (!popover) return;
+  popover.dataset.draftPopover = 'edit';
+  popover.textContent = '';
+
+  const textarea = document.createElement('textarea');
+  textarea.dataset.draftEditInput = 'active';
+  textarea.value = prediction;
+  textarea.rows = 4;
+  textarea.style.cssText = [
+    'width: 320px',
+    'max-width: 60vw',
+    'font: 12px/1.5 inherit',
+    'border: 1px solid #d1d5db',
+    'border-radius: 6px',
+    'padding: 6px',
+    'resize: vertical',
+  ].join(';');
+
+  const applyButton = actionButton('apply', 'Apply');
+  applyButton.style.background = '#eef2ff';
+  applyButton.addEventListener('click', () => callbacks.onAccept(textarea.value));
+
+  const cancelButton = actionButton('cancel', 'Cancel');
+  cancelButton.addEventListener('click', () => {
+    removeSuggestionPopover();
+    showSuggestionPopover(target, callbacks);
+  });
+
+  popover.append(textarea, applyButton, cancelButton);
+  textarea.focus();
+}
+
+export function removeSuggestionPopover(): void {
+  document.getElementById(POPOVER_ID)?.remove();
 }

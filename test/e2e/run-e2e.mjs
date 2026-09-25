@@ -14,6 +14,12 @@
  *  TC2  ghost text appears on a legal drafting field, Tab accepts, Esc rejects
  *  TC3  active indicator renders on a detected legal form
  *  TC4  a non-legal form never activates the assist (no UI, no requests)
+ *  TC5  a longer suggestion (caption block) raises the Accept / Edit /
+ *       Regenerate popover; Accept inserts, nothing auto-inserts
+ *  TC6  popover Edit mode applies user-edited text only on Apply
+ *  TC7  popover Regenerate re-requests the suggestion
+ *  TC8  BYOK connection test: typed error state renders for an unreachable
+ *       endpoint, success state renders for a reachable one
  *
  * Run: node test/e2e/run-e2e.mjs  (after prepare-dist + servers are up)
  */
@@ -181,6 +187,172 @@ record(
   ghostOnPlain === 0 && indicatorOnPlain === 0 && countAfterPlain === countBeforePlain,
   `ghost: ${ghostOnPlain}, indicator: ${indicatorOnPlain}, provider requests ${countBeforePlain}->${countAfterPlain}`,
 );
+
+// ---------- TC5: popover on longer suggestions (Accept / Edit / Regenerate) ----------
+// Caption seeds ("Smith v. Jones") select the caption_block drafting prompt,
+// which the mock answers with a long suggestion past the popover threshold.
+// Re-focus like a user: Esc-suppressed suggestions only clear when the field
+// is genuinely re-focused (blur a sibling field, then return), matching the
+// spec's "never re-fires until re-focus" contract.
+await factsField.fill('');
+await page.locator('#case_number').click();
+await factsField.click();
+await page.keyboard.type('Smith v. Jones, Plaintiff, vs. Becker');
+const popoverAppeared = await poll(
+  async () => (await page.locator('[data-draft-popover="menu"]').count()) > 0,
+  8000,
+);
+if (!popoverAppeared) {
+  record('tc5-popover-accept', false, 'Accept/Edit/Regenerate popover never appeared for a long caption suggestion');
+} else {
+  await page.screenshot({ path: `${EVIDENCE}/tc5-popover.png` });
+  const popoverText = await page.locator('[data-draft-popover="menu"]').textContent();
+  await page.locator('[data-draft-action="accept"]').click();
+  await page.waitForTimeout(400);
+  const acceptedCaption = await factsField.inputValue();
+  const popoverGoneAfterAccept = (await page.locator('[data-draft-popover]').count()) === 0;
+  const markerGoneAfterAccept = (await factsField.getAttribute('data-prediction')) === null;
+  record(
+    'tc5-popover-accept',
+    acceptedCaption.includes('United States District Court') && popoverGoneAfterAccept && markerGoneAfterAccept,
+    `caption inserted via Accept: ${acceptedCaption.includes('United States District Court')}, popover removed: ${popoverGoneAfterAccept}, hint text: ${(popoverText ?? '').slice(0, 40)}`,
+  );
+}
+
+// ---------- TC6: Edit mode applies the edited text only on Apply ----------
+await factsField.fill('');
+await page.locator('#case_number').click();
+await factsField.click();
+await page.keyboard.type('Smith v. Jones');
+const editPopoverReady = await poll(
+  async () => (await page.locator('[data-draft-popover="menu"]').count()) > 0,
+  8000,
+);
+if (!editPopoverReady) {
+  record('tc6-edit-apply', false, 'popover did not reappear for the Edit flow');
+} else {
+  await page.locator('[data-draft-action="edit"]').click();
+  const editAreaReady = await poll(
+    async () => (await page.locator('[data-draft-edit-input]').count()) > 0,
+    3000,
+  );
+  if (!editAreaReady) {
+    record('tc6-edit-apply', false, 'Edit mode did not swap the popover to an editable textarea');
+  } else {
+    await page.screenshot({ path: `${EVIDENCE}/tc6-edit-mode.png` });
+    const editArea = page.locator('[data-draft-edit-input]');
+    await editArea.fill('CAPTION (edited by the drafter): Smith v. Becker, N.D. Cal.');
+    await page.locator('[data-draft-action="apply"]').click();
+    await page.waitForTimeout(400);
+    const editedValue = await factsField.inputValue();
+    const popoverGoneAfterApply = (await page.locator('[data-draft-popover]').count()) === 0;
+    record(
+      'tc6-edit-apply',
+      editedValue.includes('CAPTION (edited by the drafter)') && popoverGoneAfterApply,
+      `edited text inserted only via Apply, popover removed: ${popoverGoneAfterApply}`,
+    );
+  }
+}
+
+// ---------- TC7: Regenerate re-requests the suggestion ----------
+await factsField.fill('');
+await page.locator('#case_number').click();
+await factsField.click();
+await page.keyboard.type('Smith v. Jones');
+const regeneratePopoverReady = await poll(
+  async () => (await page.locator('[data-draft-popover="menu"]').count()) > 0,
+  8000,
+);
+if (!regeneratePopoverReady) {
+  record('tc7-regenerate', false, 'popover did not appear for the Regenerate flow');
+} else {
+  const countBeforeRegen = await fetchStats();
+  await page.locator('[data-draft-action="regenerate"]').click();
+  const popoverBack = await poll(
+    async () => (await page.locator('[data-draft-popover="menu"]').count()) > 0,
+    8000,
+  );
+  const countAfterRegen = await fetchStats();
+  record(
+    'tc7-regenerate',
+    popoverBack && countAfterRegen > countBeforeRegen,
+    `popover re-appeared: ${popoverBack}, provider requests ${countBeforeRegen}->${countAfterRegen}`,
+  );
+}
+
+// ---------- TC8: BYOK connection test error and success states ----------
+// The popup reads settings into React state on mount, so each state gets a
+// freshly seeded popup page. A red result for an unreachable endpoint and a
+// teal one for the mock prove both states render — no silent failure.
+async function testConnectionState(endpoint) {
+  await worker.evaluate(async (ep) => {
+    const current = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({
+      settings: { ...current.settings, apiEndpoint: ep, apiKey: 'e2e-not-a-real-key' },
+    });
+  }, endpoint);
+  const popup = await context.newPage();
+  // QA evidence floor: shorter edge >= 720px — capture the popup window on a
+  // standard desktop-size page rather than upscaling a small viewport.
+  await popup.setViewportSize({ width: 1024, height: 768 });
+  await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'load' });
+  await popup.getByRole('button', { name: 'Test connection' }).click();
+  const result = popup.locator('[data-testid="connection-test-result"]');
+  const rendered = await poll(async () => (await result.count()) > 0, 10000);
+  if (!rendered) {
+    await popup.close();
+    return { rendered: false, ok: null, color: '', popup: null };
+  }
+  const color = await result.evaluate((el) => getComputedStyle(el).color);
+  await popup.waitForTimeout(300);
+  // Parse "rgb(r, g, b)": red-ish errors have r > g; teal success has g > r.
+  const [, r, g] = color.match(/rgb\((\d+),\s*(\d+)/).map(Number);
+  return { rendered: true, ok: g > r, color, popup };
+}
+
+const errorState = await testConnectionState('http://127.0.0.1:9/v1/chat/completions');
+if (!errorState.rendered) {
+  record('tc8-byok-connection-test', false, 'connection-test result never rendered for the unreachable endpoint');
+} else {
+  await errorState.popup.screenshot({ path: `${EVIDENCE}/tc8-byok-error.png` });
+  await errorState.popup.close();
+  const successState = await testConnectionState(`${MOCK_BASE}/v1/chat/completions`);
+  if (!successState.rendered) {
+    record('tc8-byok-connection-test', false, 'connection-test result never rendered for the mock endpoint');
+  } else {
+    await successState.popup.screenshot({ path: `${EVIDENCE}/tc8-byok-success.png` });
+    await successState.popup.close();
+    record(
+      'tc8-byok-connection-test',
+      !errorState.ok && successState.ok,
+      `error state red: ${!errorState.ok} (${errorState.color}), success state teal: ${successState.ok} (${successState.color})`,
+    );
+  }
+}
+
+// ---------- Store screenshots (1280x800, ghost text + popover) ----------
+// Each shot uses a fresh page so no leftover text or suppression state from
+// the previous capture leaks into the frame.
+const storeShots = [
+  { file: 'screenshot-drafting.png', seed: 'Indemnification — contractor liable only for negligence', wantPopover: false },
+  { file: 'screenshot-popover.png', seed: 'Smith v. Jones, Plaintiff, vs. Becker', wantPopover: true },
+];
+for (const shot of storeShots) {
+  const storePage = await context.newPage();
+  await storePage.setViewportSize({ width: 1280, height: 800 });
+  await storePage.goto(`${FIXTURE_BASE}/legal-form.html`, { waitUntil: 'load' });
+  const storeField = storePage.locator('#statement_of_facts');
+  await storeField.click();
+  await storePage.keyboard.type(shot.seed);
+  if (shot.wantPopover) {
+    await poll(async () => (await storePage.locator('[data-draft-popover="menu"]').count()) > 0, 8000);
+  } else {
+    await poll(async () => (await storeField.getAttribute('data-prediction')) !== null, 8000);
+  }
+  await storePage.waitForTimeout(300);
+  await storePage.screenshot({ path: `${process.cwd()}/store-assets/${shot.file}` });
+  await storePage.close();
+}
 
 // Closing the page flushes its video; save before the context tears down.
 await page.close();

@@ -39,6 +39,7 @@ next-env.d.ts
 # Build outputs
 extension/dist/
 dist/
+dist-packages/
 
 # IDE and editor files
 .vscode/

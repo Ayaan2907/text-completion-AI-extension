@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "AI Text Completion",
-  "version": "1.1.0",
+  "name": "Draft Assist",
+  "version": "2.0.0",
   "description": "Drafting help inside the forms you already use — your key, your data.",
   "permissions": [
     "storage",

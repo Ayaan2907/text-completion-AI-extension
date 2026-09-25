@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "build": "cd extension && webpack --config src/webpack.config.js",
+    "build:prod": "cd extension && NODE_ENV=production webpack --config src/webpack.config.js",
+    "package": "npm run build:prod && node scripts/package.mjs",
     "watch": "cd extension && webpack --config src/webpack.config.js --watch",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p extension/tsconfig.json",

@@ -1,4 +1,5 @@
 import type { Settings } from '../types';
+import { buildDraftingPrompt, type DraftKind } from './draftingPrompts';
 
 /** Provider style implied by the endpoint host. */
 export type ProviderKind = 'google' | 'openai-compatible';
@@ -124,44 +125,12 @@ export class AIService {
     this.pageContext = newContext;
   }
 
-  private buildPrompt(
-    text: string,
-    cursorPos: number,
-    inputContext?: string,
-    tabCount?: number,
-  ): string {
-    const beforeText = text.substring(Math.max(0, cursorPos - 100), cursorPos);
-    const afterText = text.substring(cursorPos, Math.min(text.length, cursorPos + 100));
-    const answerLength = describeAnswerLength(tabCount);
-
-    return `You are a text completion AI focused exclusively on continuing the user's text naturally. Provide ONLY the continuation text.
-
-          Context:
-          * User Background: ${this.settings.userContext}
-          * Page Content: ${this.pageContext}
-          * Input Field Type: ${inputContext || 'None'}
-          * Desired Length: ${answerLength} words
-
-          Text Before Cursor: "${beforeText}"
-          [Cursor Position]
-          Text After Cursor: "${afterText}"
-
-          Requirements:
-          * Return ONLY the predicted continuation - never repeat "Text before cursor" or "Text after cursor"
-          * No introductions or explanations in your response
-          * Match the user's style, tone, and context
-          * Ensure grammatical correctness
-          * Maintain proper formatting (capitalization, spacing)
-          * Complete partial words first, then begin with a space for complete words or a new word after spaces
-          * Keep completion concise and relevant
-          `;
-  }
-
   public async getPrediction(
     text: string,
     cursorPos: number,
     inputContext?: string,
     tabCount?: number,
+    draftKind: DraftKind = 'continue',
   ): Promise<string> {
     if (!this.settings.apiKey || !this.settings.enabled) return '';
 
@@ -169,7 +138,15 @@ export class AIService {
       endpoint: this.settings.apiEndpoint,
       apiKey: this.settings.apiKey,
       model: this.settings.model,
-      prompt: this.buildPrompt(text, cursorPos, inputContext, tabCount),
+      prompt: buildDraftingPrompt({
+        kind: draftKind,
+        text,
+        cursorPos,
+        fieldLabel: inputContext ?? '',
+        pageContext: this.pageContext,
+        userContext: this.settings.userContext,
+        answerLength: describeAnswerLength(tabCount),
+      }),
     });
 
     // Failures propagate to the background message handler, which responds

@@ -2,6 +2,7 @@ import { defaultSettings, type Settings, type SitePrefs } from './types';
 import { AIService } from './services/ai';
 import { detectLegalContext, type PageSignals } from './services/contextDetection';
 import { decideSiteActivation, originIsGranted } from './services/siteActivation';
+import { replacesDraftedText, type DraftKind } from './services/draftingPrompts';
 
 // The settings object (which contains the API key) lives in
 // chrome.storage.local only — sync storage replicates to the user's
@@ -133,16 +134,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'GET_PREDICTION') {
-    const { text, cursorPos, inputContext, tabCount } = request;
+    const { text, cursorPos, inputContext, tabCount, draftKind } = request as {
+      type: string
+      text: string
+      cursorPos: number
+      inputContext?: string
+      tabCount?: number
+      draftKind?: DraftKind
+    };
 
     if (!settings.apiKey || !settings.enabled) {
       sendResponse({ prediction: '' });
       return true;
     }
 
-    aiService.getPrediction(text, cursorPos, inputContext, tabCount)
+    const kind: DraftKind = draftKind ?? 'continue';
+    aiService.getPrediction(text, cursorPos, inputContext, tabCount, kind)
       .then((prediction) => {
-        sendResponse({ prediction });
+        sendResponse({
+          prediction,
+          // A plain-english rewrite replaces the drafted portion instead of
+          // inserting at the cursor.
+          replaceFrom: replacesDraftedText(kind) ? 0 : cursorPos,
+        });
       })
       .catch((error) => {
         // Error messages are pre-mapped user-facing strings — no key or
