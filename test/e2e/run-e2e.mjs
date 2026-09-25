@@ -53,6 +53,7 @@ const context = await chromium.launchPersistentContext('', {
   // Full Chromium (not the headless shell): extensions require new-headless.
   channel: 'chromium',
   viewport: { width: 1440, height: 900 },
+  recordVideo: { dir: '/tmp/e2e-video', size: { width: 1440, height: 900 } },
   args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
 });
 
@@ -80,6 +81,7 @@ await worker.evaluate(async (endpoint) => {
 
 const page = await context.newPage();
 await page.setViewportSize({ width: 1440, height: 900 });
+const mainPageVideo = page.video();
 
 // ---------- TC1: password fields never captured ----------
 await page.goto(`${FIXTURE_BASE}/legal-form.html`, { waitUntil: 'load' });
@@ -180,6 +182,9 @@ record(
   `ghost: ${ghostOnPlain}, indicator: ${indicatorOnPlain}, provider requests ${countBeforePlain}->${countAfterPlain}`,
 );
 
+// Closing the page flushes its video; save before the context tears down.
+await page.close();
+await mainPageVideo.saveAs(`${EVIDENCE}/tc2-drafting-flow.webm`);
 await context.close();
 
 const failed = results.filter((r) => !r.ok);
