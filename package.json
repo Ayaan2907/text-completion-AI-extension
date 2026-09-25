@@ -5,7 +5,12 @@
   "scripts": {
     "build": "cd extension && webpack --config src/webpack.config.js",
     "watch": "cd extension && webpack --config src/webpack.config.js --watch",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p extension/tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:manifest": "node scripts/manifest-lint.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
     "@mantine/core": "^7.5.0",
@@ -20,10 +25,15 @@
     "@types/react-dom": "^18.2.0",
     "copy-webpack-plugin": "^12.0.2",
     "css-loader": "^6.11.0",
+    "eslint": "^9.39.5",
+    "playwright": "^1.63.0",
+    "playwright-core": "^1.63.0",
     "sharp": "^0.33.5",
     "style-loader": "^3.3.4",
     "ts-loader": "^9.5.1",
     "typescript": "^5.3.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^4.1.11",
     "webpack": "^5.90.3",
     "webpack-cli": "^5.1.4"
   }
