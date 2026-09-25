@@ -292,7 +292,9 @@ async function testConnectionState(endpoint) {
     });
   }, endpoint);
   const popup = await context.newPage();
-  await popup.setViewportSize({ width: 520, height: 680 });
+  // QA evidence floor: shorter edge >= 720px — capture the popup window on a
+  // standard desktop-size page rather than upscaling a small viewport.
+  await popup.setViewportSize({ width: 1024, height: 768 });
   await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'load' });
   await popup.getByRole('button', { name: 'Test connection' }).click();
   const result = popup.locator('[data-testid="connection-test-result"]');
