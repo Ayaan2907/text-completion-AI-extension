@@ -17,10 +17,12 @@ export interface Settings {
   model: string
 }
 
-// gemini-3.8-flash verified against Google's model lifecycle docs on 2026-09-24:
-// ai.google.dev/gemini-api/docs/deprecations (GA 2026-09-02, no shutdown announced)
-// and ai.google.dev/api (API keys travel in the x-goog-api-key header, never the URL).
-// Re-verify before changing; the previously hardcoded gemini-2.0-flash shut down 2026-06-01.
+// gemini-3.8-flash re-verified against Google's model lifecycle docs on
+// 2026-09-25:
+// ai.google.dev/gemini-api/docs/deprecations (GA 2026-09-02, no shutdown
+// announced) and ai.google.dev/api (API keys travel in the x-goog-api-key
+// header, never the URL). Re-verify before changing; the previously hardcoded
+// gemini-2.0-flash shut down 2026-06-01.
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 export const DEFAULT_API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_GEMINI_MODEL}:generateContent`;
 

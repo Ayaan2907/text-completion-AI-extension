@@ -10,8 +10,11 @@ import {
   ensureLoaderStyles,
   showSiteIndicator,
   removeSiteIndicator,
+  showSuggestionPopover,
+  removeSuggestionPopover,
 } from './utils/ui';
 import { isSensitiveField, extractFieldSignals } from './services/fieldFilter';
+import { POPOVER_MIN_CHARS, selectDraftKind, type DraftKind } from './services/draftingPrompts';
 import type { PageSignals } from './services/contextDetection';
 
 // Ensure we're in a Chrome extension context
@@ -25,6 +28,13 @@ let debounceTimer: number | null = null;
 let currentLoader: HTMLElement | null = null;
 let lastElement: HTMLElement | null = null;
 let lastInputContext: string = '';
+let lastDraftKind: DraftKind = 'continue';
+
+/** Removes the ghost text and any popover attached to it. */
+function clearSuggestion(target: HTMLElement) {
+  removePrediction(target);
+  removeSuggestionPopover();
+}
 // Track tab press count per element
 const tabPressCounts = new WeakMap<HTMLElement, number>();
 
@@ -187,16 +197,21 @@ async function handleInput(event: Event) {
   const target = event.target as HTMLElement;
   if (!target || !isEditableElement(target)) return;
 
+  // The suggestion popover's own edit textarea must not feed back into the
+  // drafting flow — typing there would clear the suggestion (and destroy the
+  // popover) mid-edit.
+  if (target.closest('[data-draft-popover]')) return;
+
   // Sensitive-field gate runs FIRST: password, credit-card, OTP, hidden and
   // autofill-disabled fields are never read, never stored, never sent.
   if (isSensitiveField(extractFieldSignals(target))) {
-    removePrediction(target);
+    clearSuggestion(target);
     return;
   }
 
   // Esc-rejected suggestions stay suppressed until the field is re-focused.
   if (target.dataset.predictionRejected) {
-    removePrediction(target);
+    clearSuggestion(target);
     return;
   }
 
@@ -205,13 +220,13 @@ async function handleInput(event: Event) {
   // Remove prediction if the active input element is changed
   if (target !== lastElement) {
     if (lastElement) {
-      removePrediction(lastElement);
+      clearSuggestion(lastElement);
     }
     lastElement = target;
     lastInputContext = getInputContext(target);
   }
 
-  removePrediction(target);
+  clearSuggestion(target);
   if (currentLoader) {
     currentLoader.remove();
     currentLoader = null;
@@ -241,19 +256,41 @@ async function handleInput(event: Event) {
         throw new Error('Chrome runtime not available');
       }
 
+      // Drafting-prompt selection is driven by the field label and the
+      // drafter's own text — both are already captured by design.
+      const textBeforeCursor = text.substring(0, cursorPos);
+      const draftKind = selectDraftKind({
+        fieldLabel: lastInputContext,
+        typedText: textBeforeCursor,
+      });
+      lastDraftKind = draftKind;
+
       const response = await chrome.runtime.sendMessage({
         type: 'GET_PREDICTION',
         text,
         cursorPos,
         inputContext: lastInputContext, // Send cached context
-        tabCount: getTabCount(target) // Send current tab count
+        tabCount: getTabCount(target), // Send current tab count
+        draftKind,
       });
 
       // The field may have been Esc-rejected while the request was in flight.
       if (target.dataset.predictionRejected) return;
 
       if (response?.prediction) {
-        showPrediction(target, cursorPos, response.prediction);
+        const replaceFrom = typeof response.replaceFrom === 'number' ? response.replaceFrom : cursorPos;
+        showPrediction(target, cursorPos, response.prediction, replaceFrom);
+        // Longer blocks (full clause, caption block) get the Accept /
+        // Edit / Regenerate popover; every action stays user-initiated.
+        if (response.prediction.length >= POPOVER_MIN_CHARS) {
+          showSuggestionPopover(target, {
+            onAccept: (editedText) => {
+              acceptPrediction(target, editedText);
+              removeSuggestionPopover();
+            },
+            onRegenerate: () => regenerateSuggestion(target),
+          });
+        }
       }
     } catch (error) {
       console.error('Prediction request failed:', error instanceof Error ? error.message : 'unknown');
@@ -270,9 +307,54 @@ async function handleInput(event: Event) {
   }, DEBOUNCE_DELAY);
 }
 
+/** Re-requests a suggestion for the current field text (popover Regenerate). */
+function regenerateSuggestion(target: HTMLElement) {
+  clearSuggestion(target);
+  const cursorPos = getCursorPosition(target);
+  const text = getElementText(target);
+  if (!text) return;
+
+  currentLoader = showLoader(target, cursorPos);
+  chrome.runtime.sendMessage({
+    type: 'GET_PREDICTION',
+    text,
+    cursorPos,
+    inputContext: lastInputContext,
+    tabCount: getTabCount(target),
+    draftKind: lastDraftKind,
+  })
+    .then((response) => {
+      if (target.dataset.predictionRejected || !response?.prediction) return;
+      const replaceFrom = typeof response.replaceFrom === 'number' ? response.replaceFrom : cursorPos;
+      showPrediction(target, cursorPos, response.prediction, replaceFrom);
+      if (response.prediction.length >= POPOVER_MIN_CHARS) {
+        showSuggestionPopover(target, {
+          onAccept: (editedText) => {
+            acceptPrediction(target, editedText);
+            removeSuggestionPopover();
+          },
+          onRegenerate: () => regenerateSuggestion(target),
+        });
+      }
+    })
+    .catch((error: unknown) => {
+      console.error('Prediction request failed:', error instanceof Error ? error.message : 'unknown');
+    })
+    .finally(() => {
+      if (currentLoader) {
+        currentLoader.remove();
+        currentLoader = null;
+      }
+    });
+}
+
 function handleKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement;
   if (!target || !isEditableElement(target)) return;
+
+  // Keys inside the popover's edit textarea (Tab, Esc) belong to editing, not
+  // to the suggestion flow.
+  if (target.closest('[data-draft-popover]')) return;
 
   // Sensitive fields: never hold or accept predictions
   if (isSensitiveField(extractFieldSignals(target))) {
@@ -284,6 +366,7 @@ function handleKeydown(event: KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     acceptPrediction(target);
+    removeSuggestionPopover();
     incrementTabCount(target);
   }
   // Reject prediction on Escape; it will not re-fire until refocus. Escape
@@ -296,7 +379,7 @@ function handleKeydown(event: KeyboardEvent) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-    removePrediction(target);
+    clearSuggestion(target);
     target.dataset.predictionRejected = 'true';
     target.addEventListener('focus', () => {
       delete target.dataset.predictionRejected;
@@ -304,7 +387,7 @@ function handleKeydown(event: KeyboardEvent) {
   }
   // Only remove prediction on specific keys that would modify the text
   else if (['Backspace', 'Delete', 'Enter', 'Space'].includes(event.key)) {
-    removePrediction(target);
+    clearSuggestion(target);
   }
 }
 
@@ -351,6 +434,7 @@ window.addEventListener('unload', () => {
   document.removeEventListener('input', handleInput);
   document.removeEventListener('keydown', handleKeydown);
   removeSiteIndicator();
+  removeSuggestionPopover();
   if (currentLoader) {
     currentLoader.remove();
   }

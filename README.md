@@ -53,7 +53,9 @@ lifecycle documentation.
 
 ```bash
 npm install
-npm run build          # webpack production build -> extension/dist/
+npm run build          # webpack dev build -> extension/dist/
+npm run build:prod     # webpack production build (minified, no source maps)
+npm run package        # production build + store ZIP -> dist-packages/
 npm run lint
 npm run typecheck
 npm test               # vitest unit suites
@@ -76,8 +78,18 @@ node test/e2e/run-e2e.mjs             # Playwright, real Chromium, extension loa
 
 Covers: password fields produce no outbound request; ghost text appears on a
 legal drafting field; Tab accepts; Esc rejects and suppresses; the indicator
-renders on legal forms; non-legal forms stay silent. Screenshots land in
-`/home/user/evidence/`.
+renders on legal forms; non-legal forms stay silent; longer suggestions raise
+the Accept / Edit / Regenerate popover (accept, edit-then-apply, regenerate
+all user-initiated). Screenshots land in `/home/user/evidence/`, store
+screenshots (1280×800) in `store-assets/`.
+
+## Store submission
+
+`npm run package` produces `dist-packages/draft-assist-v<version>.zip` — a
+store-ready MV3 bundle (production webpack build, manifest at the ZIP root).
+Listing copy and the permission justifications reviewers ask for live in
+[`store-listing.md`](./store-listing.md). The actual Web Store submission is
+the maintainer's step (developer account + one-time fee).
 
 ## Repository layout
 
@@ -89,11 +101,14 @@ extension/src/
     fieldFilter.ts      sensitive-field classification (pure, tested)
     contextDetection.ts legal-context detection (pure, tested)
     siteActivation.ts   per-site activation decisions (pure, tested)
+    draftingPrompts.ts  draft-kind selection + prompt construction (pure, tested)
     ai.ts               provider request construction + parsing (pure, tested)
-  utils/ui.ts           indicator, ghost text, loader rendering
+  utils/ui.ts           indicator, ghost text, suggestion popover rendering
   popup.tsx             settings UI (Mantine)
 test/e2e/               browser e2e harness (mock provider, fixtures, driver)
-scripts/                CI guard scripts (manifest lint, secret patterns)
+scripts/                CI guards + store packaging (manifest lint, secret patterns)
+store-assets/           generated store screenshots (1280x800)
+store-listing.md        listing copy + permission justifications
 ```
 
 ## Status and kill criteria

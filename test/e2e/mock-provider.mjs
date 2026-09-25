@@ -36,11 +36,18 @@ const server = createServer((req, res) => {
   }
 
   if (req.method === 'POST' && req.url === '/v1/chat/completions') {
-    // Put the request stream into flowing mode so 'end' fires even though
-    // the body content is not needed.
-    req.resume();
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => {
       count++;
+      // Caption-block prompts get a long suggestion (past the 160-char
+      // popover threshold); everything else gets the fixed short clause.
+      const isCaptionPrompt = body.includes('court-style caption block');
+      const content = isCaptionPrompt
+        ? '  United States District Court for the Northern District of California — Case No. [CASE NUMBER] — [PLAINTIFF], Plaintiff, v. [DEFENDANT], Defendant. — COMPLAINT FOR BREACH OF CONTRACT — DEMAND FOR JURY TRIAL — Attorney for Plaintiff, [ATTORNEY NAME], SBN [BAR NUMBER]'
+        : ' shall be liable only for losses caused by its own negligence.';
       res.writeHead(200, { 'content-type': 'application/json', ...cors });
       res.end(
         JSON.stringify({
@@ -48,7 +55,7 @@ const server = createServer((req, res) => {
             {
               message: {
                 role: 'assistant',
-                content: ' shall be liable only for losses caused by its own negligence.',
+                content,
               },
             },
           ],
