@@ -11,11 +11,27 @@ export interface Settings {
   enabled: boolean
   userContext: string
   wordMode: boolean
+  /** Full prediction endpoint URL. BYOK users may point this at any provider. */
+  apiEndpoint: string
+  /** Model id for OpenAI-compatible endpoints (Google model is part of the endpoint URL). */
+  model: string
 }
 
+// gemini-3.8-flash verified against Google's model lifecycle docs on 2026-09-24:
+// ai.google.dev/gemini-api/docs/deprecations (GA 2026-09-02, no shutdown announced)
+// and ai.google.dev/api (API keys travel in the x-goog-api-key header, never the URL).
+// Re-verify before changing; the previously hardcoded gemini-2.0-flash shut down 2026-06-01.
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_GEMINI_MODEL}:generateContent`;
+
+export type SitePref = 'enabled' | 'disabled';
+
+/** Per-host drafting-assist preference keyed by hostname. */
+export type SitePrefs = Record<string, SitePref>;
+
 export type StorageChange = {
-  oldValue?: any
-  newValue?: any
+  oldValue?: unknown
+  newValue?: unknown
 }
 
 export interface StorageChanges {
@@ -23,17 +39,17 @@ export interface StorageChanges {
     newValue: Settings
     oldValue?: Settings
   }
+  sitePrefs?: {
+    newValue: SitePrefs
+    oldValue?: SitePrefs
+  }
 }
-
-export const LLM_MODELS: LLMModel[] = [
-  { value: 'gpt-4o-mini', label: 'GPT-4o-mini', api_url: 'https://api.openai.com/v1/chat/completions' },
-  { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3', api_url: 'https://api.anthropic.com/v1/messages' },
-  { value: 'deepseek/deepseek-r1:free', label: 'DeepSeek-r1-free', api_url: 'https://openrouter.ai/api/v1/chat/completions' }
-]
 
 export const defaultSettings: Settings = {
   apiKey: '',
   enabled: true,
   userContext: 'I am a professional who writes clear and concise text.',
-  wordMode: false
+  wordMode: false,
+  apiEndpoint: DEFAULT_API_ENDPOINT,
+  model: DEFAULT_GEMINI_MODEL,
 }

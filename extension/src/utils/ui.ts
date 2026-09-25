@@ -1,36 +1,39 @@
-import { LOADER_COLOR } from './constants';
+const INDICATOR_ID = 'draft-assist-indicator';
 
-// Helper to measure text width
-function measureText(text: string, element: HTMLElement): number {
-  const span = document.createElement('span');
-  span.style.cssText = `
-    position: absolute;
-    visibility: hidden;
-    font: ${getComputedStyle(element).font};
-    letter-spacing: ${getComputedStyle(element).letterSpacing};
-    white-space: pre;
-  `;
-  span.textContent = text;
-  document.body.appendChild(span);
-  const width = span.offsetWidth;
-  document.body.removeChild(span);
-  return width;
+/**
+ * Visible indicator that drafting assist is active on this page. It is
+ * non-interactive (pointer-events: none) so it can never block form use,
+ * and it carries a data attribute for e2e selection.
+ */
+export function showSiteIndicator(category: 'legal' | 'unknown'): void {
+  removeSiteIndicator();
+  const indicator = document.createElement('div');
+  indicator.id = INDICATOR_ID;
+  indicator.dataset.draftAssistIndicator = 'active';
+  indicator.setAttribute('role', 'status');
+  indicator.textContent =
+    category === 'legal'
+      ? 'Draft Assist active — legal form detected'
+      : 'Draft Assist active — enabled for this site';
+  indicator.style.cssText = [
+    'position: fixed',
+    'bottom: 16px',
+    'right: 16px',
+    'z-index: 2147483000',
+    'pointer-events: none',
+    'font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    'padding: 6px 12px',
+    'background: #1f2937',
+    'color: #f9fafb',
+    'border-radius: 999px',
+    'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25)',
+    'opacity: 0.92',
+  ].join(';');
+  document.body.appendChild(indicator);
 }
 
-export function createSuggestionElement(text: string): HTMLElement {
-  const element = document.createElement('span');
-  element.textContent = text;
-  element.style.cssText = `
-    position: fixed;
-    color: #8c8c8c;
-    pointer-events: none;
-    white-space: pre;
-    font: inherit;
-    opacity: 0.8;
-    z-index: 10000;
-  `;
-  element.dataset.type = 'suggestion';
-  return element;
+export function removeSiteIndicator(): void {
+  document.getElementById(INDICATOR_ID)?.remove();
 }
 
 // Add loader styles to head once
