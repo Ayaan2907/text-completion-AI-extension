@@ -18,6 +18,8 @@
  *       Regenerate popover; Accept inserts, nothing auto-inserts
  *  TC6  popover Edit mode applies user-edited text only on Apply
  *  TC7  popover Regenerate re-requests the suggestion
+ *  TC8  BYOK connection test: typed error state renders for an unreachable
+ *       endpoint, success state renders for a reachable one
  *
  * Run: node test/e2e/run-e2e.mjs  (after prepare-dist + servers are up)
  */
@@ -276,6 +278,54 @@ if (!regeneratePopoverReady) {
     popoverBack && countAfterRegen > countBeforeRegen,
     `popover re-appeared: ${popoverBack}, provider requests ${countBeforeRegen}->${countAfterRegen}`,
   );
+}
+
+// ---------- TC8: BYOK connection test error and success states ----------
+// The popup reads settings into React state on mount, so each state gets a
+// freshly seeded popup page. A red result for an unreachable endpoint and a
+// teal one for the mock prove both states render — no silent failure.
+async function testConnectionState(endpoint) {
+  await worker.evaluate(async (ep) => {
+    const current = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({
+      settings: { ...current.settings, apiEndpoint: ep, apiKey: 'e2e-not-a-real-key' },
+    });
+  }, endpoint);
+  const popup = await context.newPage();
+  await popup.setViewportSize({ width: 520, height: 680 });
+  await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'load' });
+  await popup.getByRole('button', { name: 'Test connection' }).click();
+  const result = popup.locator('[data-testid="connection-test-result"]');
+  const rendered = await poll(async () => (await result.count()) > 0, 10000);
+  if (!rendered) {
+    await popup.close();
+    return { rendered: false, ok: null, color: '', popup: null };
+  }
+  const color = await result.evaluate((el) => getComputedStyle(el).color);
+  await popup.waitForTimeout(300);
+  // Parse "rgb(r, g, b)": red-ish errors have r > g; teal success has g > r.
+  const [, r, g] = color.match(/rgb\((\d+),\s*(\d+)/).map(Number);
+  return { rendered: true, ok: g > r, color, popup };
+}
+
+const errorState = await testConnectionState('http://127.0.0.1:9/v1/chat/completions');
+if (!errorState.rendered) {
+  record('tc8-byok-connection-test', false, 'connection-test result never rendered for the unreachable endpoint');
+} else {
+  await errorState.popup.screenshot({ path: `${EVIDENCE}/tc8-byok-error.png` });
+  await errorState.popup.close();
+  const successState = await testConnectionState(`${MOCK_BASE}/v1/chat/completions`);
+  if (!successState.rendered) {
+    record('tc8-byok-connection-test', false, 'connection-test result never rendered for the mock endpoint');
+  } else {
+    await successState.popup.screenshot({ path: `${EVIDENCE}/tc8-byok-success.png` });
+    await successState.popup.close();
+    record(
+      'tc8-byok-connection-test',
+      !errorState.ok && successState.ok,
+      `error state red: ${!errorState.ok} (${errorState.color}), success state teal: ${successState.ok} (${successState.color})`,
+    );
+  }
 }
 
 // ---------- Store screenshots (1280x800, ghost text + popover) ----------
